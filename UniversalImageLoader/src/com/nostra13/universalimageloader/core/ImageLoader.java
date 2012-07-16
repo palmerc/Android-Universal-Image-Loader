@@ -4,12 +4,9 @@ import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.os.Handler;
 import android.util.Log;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.ImageView;
@@ -22,7 +19,7 @@ import com.nostra13.universalimageloader.core.assist.MemoryCacheKeyUtil;
 import com.nostra13.universalimageloader.core.assist.SimpleImageLoadingListener;
 
 /**
- * Singletone for image loading and displaying at {@link ImageView ImageViews}<br />
+ * Singleton for image loading and displaying at {@link ImageView ImageViews}<br />
  * <b>NOTE:</b> {@link #init(ImageLoaderConfiguration)} method must be called before any other method.
  * 
  * @author Sergey Tarasevich (nostra13[at]gmail[dot]com)
@@ -37,31 +34,24 @@ public class ImageLoader {
 	private static final String LOG_LOAD_IMAGE_FROM_MEMORY_CACHE = "Load image from memory cache [%s]";
 
 	private ImageLoaderConfiguration configuration;
-	private ExecutorService imageLoadingExecutor;
-	private ExecutorService cachedImageLoadingExecutor;
 	private ImageLoadingListener emptyListener;
 
 	private Map<ImageView, String> cacheKeyForImageView = Collections.synchronizedMap(new WeakHashMap<ImageView, String>());
+	private Map<ImageView, LoadAndDisplayImageTask> cacheKeyForRunningTask = Collections.synchronizedMap(new WeakHashMap<ImageView, LoadAndDisplayImageTask>());
 
-	private volatile static ImageLoader instance;
 
-	/** Returns singletone class instance */
-	public static ImageLoader getInstance() {
-		if (instance == null) {
-			synchronized (ImageLoader.class) {
-				if (instance == null) {
-					instance = new ImageLoader();
-				}
-			}
-		}
-		return instance;
-	}
 
+	private final static ImageLoader INSTANCE = new ImageLoader();
 	private ImageLoader() {
 	}
 
+	/** Returns singleton class instance */
+	public static ImageLoader getInstance() {
+		return INSTANCE;
+	}
+
 	/**
-	 * Initializes ImageLoader's singletone instance with configuration. Method shoiuld be called <b>once</b> (each
+	 * Initializes ImageLoader's singleton instance with configuration. Method should be called <b>once</b> (each
 	 * following call will have no effect)<br />
 	 * 
 	 * @param configuration
@@ -159,7 +149,13 @@ public class ImageLoader {
 	 * @throws RuntimeException
 	 *             if {@link #init(ImageLoaderConfiguration)} method wasn't called before
 	 */
-	public void displayImage(String uri, ImageView imageView, DisplayImageOptions options, ImageLoadingListener listener) {
+	public void displayImage(String uri, ImageView imageView, DisplayImageOptions options, ImageLoadingListener listener) {		
+		if (imageView != null) {			
+			displayTaskIsCancelled(imageView);
+		}
+		
+		Log.d(getClass().getCanonicalName(), "Outstanding tasks: " + cacheKeyForRunningTask.size());
+		
 		if (configuration == null) {
 			throw new RuntimeException(ERROR_NOT_INIT);
 		}
@@ -205,24 +201,13 @@ public class ImageLoader {
 				}
 			}
 
-			checkExecutors();
 			ImageLoadingInfo imageLoadingInfo = new ImageLoadingInfo(uri, imageView, targetSize, options, listener);
-			LoadAndDisplayImageTask displayImageTask = new LoadAndDisplayImageTask(configuration, imageLoadingInfo, new Handler());
-			boolean isImageCachedOnDisc = configuration.discCache.get(uri).exists();
-			if (isImageCachedOnDisc) {
-				cachedImageLoadingExecutor.submit(displayImageTask);
-			} else {
-				imageLoadingExecutor.submit(displayImageTask);
-			}
-		}
-	}
+			imageLoadingInfo.configuration = configuration;
 
-	private void checkExecutors() {
-		if (imageLoadingExecutor == null || imageLoadingExecutor.isShutdown()) {
-			imageLoadingExecutor = Executors.newFixedThreadPool(configuration.threadPoolSize, configuration.displayImageThreadFactory);
-		}
-		if (cachedImageLoadingExecutor == null || cachedImageLoadingExecutor.isShutdown()) {
-			cachedImageLoadingExecutor = Executors.newSingleThreadExecutor(configuration.displayImageThreadFactory);
+			LoadAndDisplayImageTask displayImageTask = new LoadAndDisplayImageTask();
+			cacheKeyForRunningTask.put(imageView, displayImageTask);
+
+			displayImageTask.execute(imageLoadingInfo);
 		}
 	}
 
@@ -260,25 +245,25 @@ public class ImageLoader {
 	public String getLoadingUriForView(ImageView imageView) {
 		return cacheKeyForImageView.get(imageView);
 	}
-
-	/**
-	 * Cancel the task of loading and displaying image for passed {@link ImageView}.
-	 * 
-	 * @param imageView
-	 *            {@link ImageView} for which display task will be cancelled
-	 */
-	public void cancelDisplayTask(ImageView imageView) {
-		cacheKeyForImageView.remove(imageView);
+	
+	public void displayTaskIsCancelled(ImageView imageView) {
+		if (imageView != null && cacheKeyForRunningTask.containsKey(imageView)) {
+			LoadAndDisplayImageTask task = cacheKeyForRunningTask.get(imageView);
+			task.cancel(true);
+			
+			displayTaskDidComplete(imageView);
+			Log.d(getClass().getCanonicalName(), "Task is cancelled.");
+		}
+	}
+	
+	public void displayTaskDidComplete(ImageView imageView) {
+		if (imageView != null) {
+			cacheKeyForRunningTask.remove(imageView);
+		}
 	}
 
 	/** Stops all running display image tasks, discards all other scheduled tasks */
 	public void stop() {
-		if (imageLoadingExecutor != null) {
-			imageLoadingExecutor.shutdown();
-		}
-		if (cachedImageLoadingExecutor != null) {
-			cachedImageLoadingExecutor.shutdown();
-		}
 	}
 
 	/**
