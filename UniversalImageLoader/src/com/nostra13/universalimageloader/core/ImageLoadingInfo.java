@@ -1,5 +1,6 @@
 package com.nostra13.universalimageloader.core;
 
+import android.graphics.Bitmap;
 import android.widget.ImageView;
 
 import com.nostra13.universalimageloader.core.assist.ImageLoadingListener;
@@ -22,6 +23,8 @@ final class ImageLoadingInfo {
 	final ImageSize targetSize;
 	final DisplayImageOptions options;
 	final ImageLoadingListener listener;
+	ImageLoaderConfiguration configuration;
+	Bitmap bitmap;
 
 	public ImageLoadingInfo(String uri, ImageView imageView, ImageSize targetSize, DisplayImageOptions options, ImageLoadingListener listener) {
 		this.uri = uri;
@@ -30,5 +33,5 @@ final class ImageLoadingInfo {
 		this.options = options;
 		this.listener = listener;
 		memoryCacheKey = MemoryCacheKeyUtil.generateKey(uri, targetSize);
-	}
+	}	
 }
