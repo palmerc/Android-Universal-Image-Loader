@@ -1,5 +1,7 @@
 ﻿# Universal Image Loader for Android
 
+This fork is solely for the purpose of testing the use of an AsyncTask within this project and how it impacts performance.
+
 This project aims to provide a reusable instrument for asynchronous image loading, caching and displaying. It is originally based on [Fedor Vlasov's project](https://github.com/thest1/LazyList) and has been vastly refactored and improved since then.
 
 ![Screenshot](https://github.com/nostra13/Android-Universal-Image-Loader/raw/master/UniversalImageLoader.png)
